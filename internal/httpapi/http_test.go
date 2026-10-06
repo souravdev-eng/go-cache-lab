@@ -64,6 +64,27 @@ func newRouter(store *memoryStore, redisErr error) http.Handler {
 	return httpapi.NewRouter(store, pingService{redisErr})
 }
 
+type memoryCache struct{ values map[string]string }
+
+func (c *memoryCache) Ping(context.Context) error { return nil }
+func (c *memoryCache) Get(_ context.Context, key string) (string, error) {
+	value, ok := c.values[key]
+	if !ok {
+		return "", errors.New("cache miss")
+	}
+	return value, nil
+}
+func (c *memoryCache) Set(_ context.Context, key, value string, _ time.Duration) error {
+	c.values[key] = value
+	return nil
+}
+func (c *memoryCache) Delete(_ context.Context, keys ...string) error {
+	for _, key := range keys {
+		delete(c.values, key)
+	}
+	return nil
+}
+
 func request(t *testing.T, router http.Handler, method, path string, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	w := httptest.NewRecorder()
@@ -118,6 +139,28 @@ func TestBaselineBookRead(t *testing.T) {
 		if w := request(t, router, http.MethodGet, tc.path, nil); w.Code != tc.status {
 			t.Errorf("%s: got %d, want %d", tc.path, w.Code, tc.status)
 		}
+	}
+}
+
+func TestSingleflightBookCacheRoundTrip(t *testing.T) {
+	store := &memoryStore{books: map[int64]bookstore.Book{1: sampleBook}}
+	cache := &memoryCache{values: make(map[string]string)}
+	router := httpapi.NewRouter(store, cache)
+	path := "/api/labs/singleflight/books/1"
+
+	w := request(t, router, http.MethodGet, path, nil)
+	if w.Code != 200 || w.Header().Get("X-Cache-Result") != "bypass" || bookFromResponse(t, w) != sampleBook {
+		t.Fatalf("miss: %d %q %s", w.Code, w.Header().Get("X-Cache-Result"), w.Body.String())
+	}
+	var cached bookstore.Book
+	if err := json.Unmarshal([]byte(cache.values["singleflight:book:1"]), &cached); err != nil || cached != sampleBook {
+		t.Fatalf("cached book: %+v, error: %v", cached, err)
+	}
+
+	store.getErr = errors.New("should not load book on cache hit")
+	w = request(t, router, http.MethodGet, path, nil)
+	if w.Code != 200 || w.Header().Get("X-Cache-Result") != "hit" || bookFromResponse(t, w) != sampleBook {
+		t.Fatalf("hit: %d %q %s", w.Code, w.Header().Get("X-Cache-Result"), w.Body.String())
 	}
 }
 

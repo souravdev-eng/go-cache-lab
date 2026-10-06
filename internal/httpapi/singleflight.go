@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sauravmajumdar/go-cache-lab/internal/bookstore"
 )
 
 // Singleflight problem: simultaneous cold reads of one book each hit PostgreSQL.
@@ -12,17 +15,39 @@ import (
 // Exercise: let same-book requests share one load, while other IDs stay independent.
 // GET /api/labs/singleflight/books/:id
 func (a *api) singleflightGet(c *gin.Context) {
-	// TODO(singleflight): use a.cache.Get/Set with per-book coalescing.
 	id, ok := bookID(c)
 	if !ok {
 		return
 	}
-	book, err := a.store.Get(c.Request.Context(), id)
+
+	key := "singleflight:book:" + strconv.FormatInt(id, 10)
+	cached, err := a.cache.Get(c.Request.Context(), key)
+	if err != nil {
+		slog.Error("cache get failed", "error", err)
+	} else {
+		var book bookstore.Book
+		if err := json.Unmarshal([]byte(cached), &book); err != nil {
+			slog.Error("cache decode failed", "error", err)
+		} else {
+			c.Header("X-Cache-Result", "hit")
+			slog.Info("book read", "book_id", id, "source", "redis", "cache_result", "hit")
+			c.JSON(http.StatusOK, book)
+			return
+		}
+	}
+
+	bookObj, err := a.store.Get(c.Request.Context(), id)
 	if err != nil {
 		storeError(c, err)
 		return
 	}
 	c.Header("X-Cache-Result", "bypass")
-	slog.Info("book read", "book_id", id, "route", c.FullPath(), "source", "postgres", "cache_result", "bypass")
-	c.JSON(http.StatusOK, book)
+	encoded, err := json.Marshal(bookObj)
+	if err != nil {
+		slog.Error("cache encode failed", "error", err)
+	} else if err := a.cache.Set(c.Request.Context(), key, string(encoded), 0); err != nil {
+		slog.Error("cache set failed", "error", err)
+	}
+	slog.Info("book read", "book_id", id, "source", "postgres", "cache_result", "bypass")
+	c.JSON(http.StatusOK, bookObj)
 }

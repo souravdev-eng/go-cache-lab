@@ -14,19 +14,27 @@ docker compose up --build
 
 The API is at `http://localhost:8080`. Compose starts one PostgreSQL instance and one Redis instance, waits for both health checks, then starts the API. The API creates the `books` table and inserts fixed seed rows on startup. Rerunning setup does not duplicate or overwrite books. Book **1** is the designated popular book for the hot-key exercises.
 
-To run Go on the host while keeping the dependencies in containers:
+To run Go on the host with automatic reload while keeping PostgreSQL and Redis in containers, install [Air](https://github.com/air-verse/air) once:
 
 ```sh
-docker compose up -d postgres redis
-set -a; . ./.env.example; set +a
-go run ./cmd/api
+PATH="/usr/local/go/bin:$PATH" go install github.com/air-verse/air@v1.52.3
 ```
+
+Then use the script from the project root:
+
+```sh
+./dev.sh start
+./dev.sh status
+./dev.sh stop
+```
+
+The script runs Air in the background. Saving a `.go` file rebuilds and restarts the API automatically; its output is in `tmp/dev.log`. The script stops the Compose API to keep port 8080 free. To go back to the containerized API, run `./dev.sh stop` followed by `docker compose up -d --build api`.
 
 The sample configuration uses host ports 5433 for PostgreSQL and 6380 for Redis. Its cache settings are exercise inputs; the starter routes do not use them yet. The Docker Compose API uses service names and internal ports instead. This is a local learning project with no authentication.
 
-Use Go 1.22 or newer for host startup. On the macOS 26 development machine used for this scaffold, the Homebrew Go 1.22.1 binary fails to launch tests; `/usr/local/go/bin/go` works.
+Use Go 1.22 or newer for host startup. On the macOS 26 development machine used for this scaffold, the Homebrew Go 1.22.1 binary fails to launch tests; `/usr/local/go/bin/go` works. If your system Go already works, the `PATH` prefix above is optional.
 
-Stop the stack with `docker compose down`. To erase database and Redis state and return to the original seed data, run `docker compose down -v`, then `docker compose up --build`.
+When using `dev.sh`, use `./dev.sh stop` to stop both the host API and its dependencies. For the all-Docker workflow, stop the stack with `docker compose down`. To erase database and Redis state and return to the original seed data, run `docker compose down -v`, then `docker compose up --build`.
 
 ## Start with one cache problem
 

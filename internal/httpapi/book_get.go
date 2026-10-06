@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GET /api/books/:id is the PostgreSQL-only baseline.
+// GET /api/books/:id is the PostgreSQL-only baseline for comparing cache labs.
 func (a *api) getBook(c *gin.Context) {
 	id, ok := bookID(c)
 	if !ok {

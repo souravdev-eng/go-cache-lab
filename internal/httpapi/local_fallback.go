@@ -7,9 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GET /api/labs/warming/books/:id
-func (a *api) warmingGet(c *gin.Context) {
-	// TODO(warming): read the warming namespace; use PostgreSQL on a cold read.
+// Local fallback problem: Redis can be unavailable during a hot read.
+// Starter behavior: PostgreSQL serves the book even when Redis is down.
+// Exercise: retain a short-lived local copy and use it during Redis failures.
+// GET /api/labs/hot-keys/local-fallback/books/:id
+func (a *api) localFallbackGet(c *gin.Context) {
+	// TODO(local-fallback): maintain a bounded local copy for Redis outages.
 	id, ok := bookID(c)
 	if !ok {
 		return

@@ -31,14 +31,17 @@ type api struct {
 	cache Cache
 }
 
-// NewRouter maps each HTTP route to the handler in its own Go file.
+// NewRouter keeps URLs here; each cache pattern's handlers live together in one file.
 func NewRouter(store BookStore, cache Cache) http.Handler {
 	a := &api{store: store, cache: cache}
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+	// Process checks and the database-only comparison route.
 	r.GET("/health", a.health)
 	r.GET("/ready", a.ready)
 	r.GET("/api/books/:id", a.getBook)
+
+	// Open one pattern file to see its starter flow and focused TODOs.
 	r.GET("/api/labs/singleflight/books/:id", a.singleflightGet)
 	r.GET("/api/labs/warming/books/:id", a.warmingGet)
 	r.POST("/api/labs/warming", a.warmingPost)

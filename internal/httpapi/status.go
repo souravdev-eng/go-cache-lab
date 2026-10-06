@@ -8,7 +8,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GET /ready
+// GET /health
+func (a *api) health(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// GET /ready checks dependencies; it is separate from cache exercise behavior.
 func (a *api) ready(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 	defer cancel()

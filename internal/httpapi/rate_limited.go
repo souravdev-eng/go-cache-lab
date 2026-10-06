@@ -7,9 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GET /api/labs/hot-keys/local-fallback/books/:id
-func (a *api) localFallbackGet(c *gin.Context) {
-	// TODO(local-fallback): maintain a bounded local copy for Redis outages.
+// Rate-limit problem: a burst for one book can overwhelm the read path.
+// Starter behavior: every request reaches PostgreSQL without a limit.
+// Exercise: reject excess requests before the read and return Retry-After.
+// GET /api/labs/hot-keys/rate-limited/books/:id
+func (a *api) rateLimitedGet(c *gin.Context) {
+	// TODO(rate-limited): check a per-book allowance before loading the book.
 	id, ok := bookID(c)
 	if !ok {
 		return

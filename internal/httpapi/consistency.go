@@ -1,12 +1,33 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sauravmajumdar/go-cache-lab/internal/bookstore"
 )
+
+// Consistency problem: a cached book can become stale after an update.
+// Starter behavior: reads bypass Redis and updates write only to PostgreSQL.
+// Exercise: add cache-aside reads and invalidate copies after a database update.
+// GET /api/labs/consistency/books/:id
+func (a *api) consistencyGet(c *gin.Context) {
+	// TODO(consistency): use a.cache.Get/Set with a short TTL.
+	id, ok := bookID(c)
+	if !ok {
+		return
+	}
+	book, err := a.store.Get(c.Request.Context(), id)
+	if err != nil {
+		storeError(c, err)
+		return
+	}
+	c.Header("X-Cache-Result", "bypass")
+	slog.Info("book read", "book_id", id, "route", c.FullPath(), "source", "postgres", "cache_result", "bypass")
+	c.JSON(http.StatusOK, book)
+}
 
 // PUT /api/labs/consistency/books/:id
 func (a *api) consistencyPut(c *gin.Context) {

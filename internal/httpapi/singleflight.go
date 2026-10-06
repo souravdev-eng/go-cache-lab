@@ -7,9 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GET /api/labs/hot-keys/replicated/books/:id
-func (a *api) replicatedGet(c *gin.Context) {
-	// TODO(replicated): select among logical Redis copies of the popular book.
+// Singleflight problem: simultaneous cold reads of one book each hit PostgreSQL.
+// Starter behavior: every request bypasses Redis and causes a database load.
+// Exercise: let same-book requests share one load, while other IDs stay independent.
+// GET /api/labs/singleflight/books/:id
+func (a *api) singleflightGet(c *gin.Context) {
+	// TODO(singleflight): use a.cache.Get/Set with per-book coalescing.
 	id, ok := bookID(c)
 	if !ok {
 		return

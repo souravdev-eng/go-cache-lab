@@ -1,6 +1,6 @@
 # Bookstore cache lab
 
-A local Go/Gin bookstore API backed by PostgreSQL, with Redis ready for six cache exercises. The starter API works before any exercise is completed. All lab reads currently load from PostgreSQL and return `X-Cache-Result: bypass`.
+A local Go/Gin bookstore API backed by PostgreSQL, with Redis ready for six cache exercises. Request coalescing is implemented; the other lab reads still load from PostgreSQL and return `X-Cache-Result: bypass`.
 
 Start with the [cache-pattern code tour](docs/code-tour.md). It follows one request and shows which file to edit first.
 
@@ -30,7 +30,7 @@ Then use the script from the project root:
 
 The script runs Air in the background. Saving a `.go` file rebuilds and restarts the API automatically; its output is in `tmp/dev.log`. The script stops the Compose API to keep port 8080 free. To go back to the containerized API, run `./dev.sh stop` followed by `docker compose up -d --build api`.
 
-The sample configuration uses host ports 5433 for PostgreSQL and 6380 for Redis. Its cache settings are exercise inputs; the starter routes do not use them yet. The Docker Compose API uses service names and internal ports instead. This is a local learning project with no authentication.
+The sample configuration uses host ports 5433 for PostgreSQL and 6380 for Redis. `CACHE_TTL` controls the singleflight Redis lifetime (default `30s`); Compose accepts the same variable. The Docker Compose API uses service names and internal ports instead. This is a local learning project with no authentication.
 
 Use Go 1.22 or newer for host startup. On the macOS 26 development machine used for this scaffold, the Homebrew Go 1.22.1 binary fails to launch tests; `/usr/local/go/bin/go` works. If your system Go already works, the `PATH` prefix above is optional.
 
@@ -43,16 +43,19 @@ curl -i localhost:8080/api/books/1
 curl -i localhost:8080/api/labs/singleflight/books/1
 ```
 
-Book 1 is the designated popular book. The first URL is the database-only baseline. The second is the request-coalescing exercise. Both currently load PostgreSQL and return `X-Cache-Result: bypass`. Open `internal/httpapi/singleflight.go` to see the entire starter flow and its TODO.
+Book 1 is the designated popular book. The first URL is the database-only baseline and returns `X-Cache-Result: bypass`. The second uses Redis: a cold read returns `miss`, another concurrent cold request can return `shared`, and a warm read returns `hit`. Open `internal/httpapi/singleflight.go` to follow the flow.
 
-To see the starting bottleneck, send 20 simultaneous requests for the same book, then inspect the API's database-read logs:
+Clear the exercise key, send 20 simultaneous requests for the same book, then inspect the API's database-read logs and Redis key lifetime:
 
 ```sh
-seq 1 20 | xargs -P20 -I{} curl -s -o /dev/null localhost:8080/api/labs/singleflight/books/1
-docker compose logs --since=1m api | grep '"msg":"book read"' | grep 'singleflight'
+docker compose exec redis redis-cli DEL singleflight:book:1
+seq 1 20 | xargs -P20 -I{} curl -s -D - -o /dev/null localhost:8080/api/labs/singleflight/books/1 | grep -i '^x-cache-result:'
+docker compose logs --since=1m api | grep '"route":"/api/labs/singleflight/books/:id"' | grep '"source":"postgres"'
+docker compose exec redis redis-cli TTL singleflight:book:1
+curl -i localhost:8080/api/labs/singleflight/books/1
 ```
 
-Each request in this starter burst causes a PostgreSQL read. After implementing coalescing, a cold same-book burst should share one database load. This is the first bottleneck to investigate; you can ignore the other patterns until you are ready for them.
+Expect one PostgreSQL load for a same-book cold burst handled by one API process, plus `shared` or `hit` outcomes for the other requests. The final curl should be a `hit` until the TTL expires; after expiry, the next read is a `miss` and loads PostgreSQL again. The Redis TTL command shows remaining seconds (`-2` means the key has expired). Different book IDs use different coalescing keys and can load independently. This exercise does not coordinate requests across API processes.
 
 | Cache pattern | File to edit | Routes for the exercise |
 | --- | --- | --- |
@@ -69,9 +72,9 @@ For other starter checks, `GET /api/books/999` returns 404 and `GET /api/books/n
 
 ## Exercise TODOs
 
-The starter read handlers deliberately use PostgreSQL. Replace one pattern's handler as you complete its issue in `.scratch/cache-lab/issues/`. Use a distinct Redis prefix per exercise and expose outcomes in `X-Cache-Result` and structured logs. Suggested prefixes are `singleflight:book:`, `warming:book:`, `consistency:book:`, `hot-keys:replicated:book:`, `hot-keys:local-fallback:book:`, and `hot-keys:rate-limited:book:`. Keep 404s uncached. `consistency.go` has the TODO to invalidate cache copies after its database write.
+The remaining starter read handlers deliberately use PostgreSQL. Replace one pattern's handler as you complete its issue in `.scratch/cache-lab/issues/`. Use a distinct Redis prefix per exercise and expose outcomes in `X-Cache-Result` and structured logs. Suggested prefixes are `singleflight:book:`, `warming:book:`, `consistency:book:`, `hot-keys:replicated:book:`, `hot-keys:local-fallback:book:`, and `hot-keys:rate-limited:book:`. Keep 404s uncached. `consistency.go` has the TODO to invalidate cache copies after its database write.
 
-- **Request coalescing:** Cache aside with a per-book, in-process singleflight group. Recheck Redis inside the group. Same-book cold reads should share one database load; other book IDs should proceed independently. Coalescing does not span API processes.
+- **Request coalescing (complete):** Cache aside with a per-book, in-process singleflight group. Redis is rechecked inside the group. Same-book cold reads share one database load; other book IDs proceed independently. Coalescing does not span API processes.
 - **Warming:** On startup and on `POST /api/labs/warming`, load selected seed books into the warming namespace. Report success and failure counts. A warmed first read should hit Redis; a failed warm should be visible.
 - **Consistency:** Cache aside on reads. After a successful PostgreSQL update, invalidate every Redis namespace, each logical replica, and the local copy. Test read-after-update across routes. Concurrent reads and writes can still race; this lab does not claim strict consistency.
 - **Replicated hot key:** Store several logical copies of popular book 1 and show the selected copy in the response or logs. Multiple keys in one Redis instance demonstrate copy management, not load spreading across Redis nodes.
@@ -80,4 +83,4 @@ The starter read handlers deliberately use PostgreSQL. Replace one pattern's han
 
 Inspect future Redis keys with `docker compose exec redis redis-cli --scan --pattern '*book*'`; clear a particular exercise key with `docker compose exec redis redis-cli DEL singleflight:book:1`. To try a Redis outage after implementing fallback, run `docker compose stop redis`, read a primed book through the local-fallback route, then run `docker compose start redis`.
 
-Run the starter tests with `go test ./...`. To also check seeding and updates through the HTTP API against disposable PostgreSQL and Redis containers, run `CACHE_LAB_INTEGRATION=1 go test ./...` with Docker running. The unfinished exercise acceptance scenarios above are future checks; ordinary tests verify the working starter HTTP behavior.
+Run the tests with `go test ./...`. To also check seeding and updates through the HTTP API against disposable PostgreSQL and Redis containers, run `CACHE_LAB_INTEGRATION=1 go test ./...` with Docker running. The request-coalescing acceptance checks run in the ordinary test suite; the remaining exercise scenarios are future checks.

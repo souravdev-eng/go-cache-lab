@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/sauravmajumdar/go-cache-lab/internal/bookstore"
+	"github.com/sauravmajumdar/go-cache-lab/internal/cache"
+	"github.com/sauravmajumdar/go-cache-lab/internal/httpapi"
 )
 
 func main() {
@@ -34,15 +36,15 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
-	cache := bookstore.NewRedisCache(redisAddr)
-	defer cache.Close()
+	redisCache := cache.NewRedisCache(redisAddr)
+	defer redisCache.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := store.Ping(ctx); err != nil {
 		slog.Error("postgres unavailable", "error", err)
 		os.Exit(1)
 	}
-	if err := cache.Ping(ctx); err != nil {
+	if err := redisCache.Ping(ctx); err != nil {
 		slog.Error("redis unavailable", "error", err)
 		os.Exit(1)
 	}
@@ -51,16 +53,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := &http.Server{Addr: httpAddr, Handler: bookstore.NewRouter(store, cache), ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{
+		Addr:              httpAddr,
+		Handler:           httpapi.NewRouter(store, redisCache),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
 	go func() {
 		<-shutdownCtx.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = server.Shutdown(ctx)
 	}()
+
 	slog.Info("bookstore API listening", "address", httpAddr)
+
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("serve HTTP", "error", err)
 		os.Exit(1)

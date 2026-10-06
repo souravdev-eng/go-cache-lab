@@ -44,21 +44,27 @@ curl -i localhost:8080/api/books/1
 
 `/health` reports that the process is responding. `/ready` checks PostgreSQL and Redis and returns 503 when either is unavailable. Unknown books return 404, invalid IDs and update bodies return 400, and unavailable database reads return 503. Each successful read returns the same `id`, `title`, `author`, `price_cents`, and `updated_at` fields. The update writes through to PostgreSQL.
 
-Other starter GET routes (replace `1` with a book ID):
+`cmd/api/main.go` wires the application. `internal/bookstore/` holds the book type and PostgreSQL store, `internal/cache/` holds Redis access, and `internal/httpapi/` holds the HTTP routes. Each route is registered in `internal/httpapi/http.go` and has one handler in its own Go file. The shared starter database read is in `http_helpers.go`; replace the call to it inside the exercise file you are working on.
 
-| Exercise | Route |
+| Route | Handler file in `internal/httpapi/` |
 | --- | --- |
-| Cache warming | `/api/labs/warming/books/1` |
-| Cache consistency | `/api/labs/consistency/books/1` |
-| Replicated hot key | `/api/labs/hot-keys/replicated/books/1` |
-| Local fallback | `/api/labs/hot-keys/local-fallback/books/1` |
-| Rate limiting | `/api/labs/hot-keys/rate-limited/books/1` |
+| `GET /health` | `health.go` |
+| `GET /ready` | `ready.go` |
+| `GET /api/books/:id` | `book_get.go` |
+| `GET /api/labs/singleflight/books/:id` | `singleflight_get.go` |
+| `GET /api/labs/warming/books/:id` | `warming_get.go` |
+| `POST /api/labs/warming` | `warming_post.go` |
+| `GET /api/labs/consistency/books/:id` | `consistency_get.go` |
+| `PUT /api/labs/consistency/books/:id` | `consistency_put.go` |
+| `GET /api/labs/hot-keys/replicated/books/:id` | `replicated_get.go` |
+| `GET /api/labs/hot-keys/local-fallback/books/:id` | `local_fallback_get.go` |
+| `GET /api/labs/hot-keys/rate-limited/books/:id` | `rate_limited_get.go` |
 
 `POST /api/labs/warming` returns 501 with `status: incomplete` until the warming exercise is implemented. The lab routes are independent paths so their future Redis key namespaces can be kept separate.
 
 ## Exercise TODOs
 
-The starter read handlers in `internal/bookstore/http.go` deliberately use PostgreSQL. Replace each route's read path as you complete its issue in `.scratch/cache-lab/issues/`. Use a distinct Redis prefix per exercise and expose outcomes in `X-Cache-Result` and structured logs. Suggested prefixes are `singleflight:book:`, `warming:book:`, `consistency:book:`, `hot-keys:replicated:book:`, `hot-keys:local-fallback:book:`, and `hot-keys:rate-limited:book:`. Keep 404s uncached. The starter update has a TODO to invalidate cache copies after its database write.
+The starter read handlers deliberately use PostgreSQL. Replace the handler in one exercise file as you complete its issue in `.scratch/cache-lab/issues/`. Use a distinct Redis prefix per exercise and expose outcomes in `X-Cache-Result` and structured logs. Suggested prefixes are `singleflight:book:`, `warming:book:`, `consistency:book:`, `hot-keys:replicated:book:`, `hot-keys:local-fallback:book:`, and `hot-keys:rate-limited:book:`. Keep 404s uncached. `consistency_put.go` has the TODO to invalidate cache copies after its database write.
 
 - **Request coalescing:** Cache aside with a per-book, in-process singleflight group. Recheck Redis inside the group. Same-book cold reads should share one database load; other book IDs should proceed independently. Coalescing does not span API processes.
 - **Warming:** On startup and on `POST /api/labs/warming`, load selected seed books into the warming namespace. Report success and failure counts. A warmed first read should hit Redis; a failed warm should be visible.

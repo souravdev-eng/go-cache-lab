@@ -1,4 +1,4 @@
-package bookstore_test
+package httpapi_test
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sauravmajumdar/go-cache-lab/internal/bookstore"
+	"github.com/sauravmajumdar/go-cache-lab/internal/httpapi"
 )
 
 var sampleBook = bookstore.Book{
@@ -60,7 +61,7 @@ func (p pingService) Set(context.Context, string, string, time.Duration) error {
 func (p pingService) Delete(context.Context, ...string) error                  { return p.err }
 
 func newRouter(store *memoryStore, redisErr error) http.Handler {
-	return bookstore.NewRouter(store, pingService{redisErr})
+	return httpapi.NewRouter(store, pingService{redisErr})
 }
 
 func request(t *testing.T, router http.Handler, method, path string, body []byte) *httptest.ResponseRecorder {

@@ -1,4 +1,4 @@
-package bookstore
+package cache
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package bookstore_test
+package httpapi_test
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/sauravmajumdar/go-cache-lab/internal/bookstore"
+	"github.com/sauravmajumdar/go-cache-lab/internal/cache"
+	"github.com/sauravmajumdar/go-cache-lab/internal/httpapi"
 )
 
 // Run with CACHE_LAB_INTEGRATION=1 go test ./... when Docker is available.
@@ -30,12 +32,12 @@ func TestSeedAndUpdateThroughHTTPWithDisposableServices(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	cache := bookstore.NewRedisCache("127.0.0.1:" + redisPort)
-	t.Cleanup(func() { _ = cache.Close() })
+	redisCache := cache.NewRedisCache("127.0.0.1:" + redisPort)
+	t.Cleanup(func() { _ = redisCache.Close() })
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		postgresErr, redisErr := store.Ping(ctx), cache.Ping(ctx)
+		postgresErr, redisErr := store.Ping(ctx), redisCache.Ping(ctx)
 		cancel()
 		if postgresErr == nil && redisErr == nil {
 			break
@@ -52,7 +54,7 @@ func TestSeedAndUpdateThroughHTTPWithDisposableServices(t *testing.T) {
 	if err := store.Initialize(ctx); err != nil {
 		t.Fatalf("repeat initialization: %v", err)
 	}
-	router := bookstore.NewRouter(store, cache)
+	router := httpapi.NewRouter(store, redisCache)
 	if w := request(t, router, http.MethodGet, "/ready", nil); w.Code != 200 {
 		t.Fatalf("ready: %d %s", w.Code, w.Body.String())
 	}

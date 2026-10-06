@@ -44,7 +44,7 @@ curl -i localhost:8080/api/books/1
 
 `/health` reports that the process is responding. `/ready` checks PostgreSQL and Redis and returns 503 when either is unavailable. Unknown books return 404, invalid IDs and update bodies return 400, and unavailable database reads return 503. Each successful read returns the same `id`, `title`, `author`, `price_cents`, and `updated_at` fields. The update writes through to PostgreSQL.
 
-`cmd/api/main.go` wires the application. `internal/bookstore/` holds the book type and PostgreSQL store, `internal/cache/` holds Redis access, and `internal/httpapi/` holds the HTTP routes. Each route is registered in `internal/httpapi/http.go` and has one handler in its own Go file. The shared starter database read is in `http_helpers.go`; replace the call to it inside the exercise file you are working on.
+`cmd/api/main.go` wires the application. `internal/bookstore/` holds the book type and PostgreSQL store, `internal/cache/` holds Redis access, and `internal/httpapi/` holds the HTTP routes. Each route is registered in `internal/httpapi/http.go` and has one handler in its own Go file. Each GET file shows its PostgreSQL read and response, so you can edit the whole starter flow in that file. `http_helpers.go` only shares ID validation and error responses.
 
 | Route | Handler file in `internal/httpapi/` |
 | --- | --- |

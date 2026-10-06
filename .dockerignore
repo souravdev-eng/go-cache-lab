@@ -1,0 +1,5 @@
+.git
+.scratch
+docs
+.env*
+tmp

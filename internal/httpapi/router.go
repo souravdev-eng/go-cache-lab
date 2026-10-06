@@ -36,12 +36,11 @@ type api struct {
 }
 
 // NewRouter keeps URLs here; each cache pattern's handlers live together in one file.
-func NewRouter(store BookStore, cache Cache, cacheTTL ...time.Duration) http.Handler {
-	ttl := 30 * time.Second
-	if len(cacheTTL) > 0 && cacheTTL[0] > 0 {
-		ttl = cacheTTL[0]
+func NewRouter(store BookStore, cache Cache, cacheTTL time.Duration) http.Handler {
+	if cacheTTL <= 0 {
+		panic("cache TTL must be positive")
 	}
-	a := &api{store: store, cache: cache, cacheTTL: ttl, flights: make(map[string]*bookFlight)}
+	a := &api{store: store, cache: cache, cacheTTL: cacheTTL, flights: make(map[string]*bookFlight)}
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	// Process checks and the database-only comparison route.

@@ -54,7 +54,7 @@ func TestSeedAndUpdateThroughHTTPWithDisposableServices(t *testing.T) {
 	if err := store.Initialize(ctx); err != nil {
 		t.Fatalf("repeat initialization: %v", err)
 	}
-	router := httpapi.NewRouter(store, redisCache)
+	router := httpapi.NewRouter(store, redisCache, 30*time.Second)
 	if w := request(t, router, http.MethodGet, "/ready", nil); w.Code != 200 {
 		t.Fatalf("ready: %d %s", w.Code, w.Body.String())
 	}

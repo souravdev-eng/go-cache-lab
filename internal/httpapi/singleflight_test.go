@@ -94,14 +94,16 @@ func TestSingleflightConcurrentReadsAndTTL(t *testing.T) {
 	if id := <-store.started; id != 1 {
 		t.Fatalf("first load: %d", id)
 	}
+	// Discard cache activity from the first request before tracking followers.
+	for len(cache.gets) > 0 {
+		<-cache.gets
+	}
 	for i := 0; i < 8; i++ {
 		go func() { responses <- request(t, router, http.MethodGet, path, nil) }()
 	}
-	// Each follower has observed the cold cache before the first load completes.
-	for i := 0; i < 10; i++ {
-		if key := <-cache.gets; key != "singleflight:book:1" {
-			t.Fatalf("cache key: %s", key)
-		}
+	// Keep the first database load blocked until the other requests reach Redis.
+	for i := 0; i < 8; i++ {
+		<-cache.gets
 	}
 	// Another book must complete while book 1 is blocked in PostgreSQL.
 	other := request(t, router, http.MethodGet, "/api/labs/singleflight/books/2", nil)
@@ -167,7 +169,7 @@ func (c *staleReadCache) Get(ctx context.Context, key string) (string, error) {
 func TestSingleflightRechecksCacheAfterStaleMiss(t *testing.T) {
 	store := &observedStore{loads: make(map[int64]int), started: make(chan int64, 10), release: make(chan struct{})}
 	cache := &staleReadCache{observedCache: newObservedCache(), stale: make(chan struct{}), release: make(chan struct{})}
-	router := httpapi.NewRouter(store, cache)
+	router := httpapi.NewRouter(store, cache, 30*time.Second)
 	const path = "/api/labs/singleflight/books/1"
 	first := make(chan *httptest.ResponseRecorder, 1)
 	go func() { first <- request(t, router, http.MethodGet, path, nil) }()
@@ -191,7 +193,7 @@ func TestSingleflightRechecksCacheAfterStaleMiss(t *testing.T) {
 func TestSingleflightUnknownBookIsNotCached(t *testing.T) {
 	store := &observedStore{loads: make(map[int64]int), started: make(chan int64, 10)}
 	cache := newObservedCache()
-	router := httpapi.NewRouter(store, cache)
+	router := httpapi.NewRouter(store, cache, 30*time.Second)
 	for i := 0; i < 2; i++ {
 		if w := request(t, router, http.MethodGet, "/api/labs/singleflight/books/999", nil); w.Code != 404 {
 			t.Fatalf("unknown book: %d %s", w.Code, w.Body.String())

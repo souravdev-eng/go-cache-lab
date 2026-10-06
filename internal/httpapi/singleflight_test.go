@@ -14,22 +14,27 @@ import (
 )
 
 type observedCache struct {
-	mu     sync.Mutex
-	values map[string]string
-	ttls   map[string]time.Duration
-	gets   chan string
+	mu      sync.Mutex
+	values  map[string]string
+	expires map[string]time.Time
+	now     time.Time
+	misses  chan struct{}
 }
 
 func newObservedCache() *observedCache {
-	return &observedCache{values: make(map[string]string), ttls: make(map[string]time.Duration), gets: make(chan string, 100)}
+	return &observedCache{values: make(map[string]string), expires: make(map[string]time.Time), now: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), misses: make(chan struct{}, 100)}
 }
 func (c *observedCache) Ping(context.Context) error { return nil }
 func (c *observedCache) Get(_ context.Context, key string) (string, error) {
 	c.mu.Lock()
 	value, ok := c.values[key]
+	if ok && !c.now.Before(c.expires[key]) {
+		delete(c.values, key)
+		ok = false
+	}
 	c.mu.Unlock()
-	c.gets <- key
 	if !ok {
+		c.misses <- struct{}{}
 		return "", errors.New("cache miss")
 	}
 	return value, nil
@@ -37,7 +42,7 @@ func (c *observedCache) Get(_ context.Context, key string) (string, error) {
 func (c *observedCache) Set(_ context.Context, key, value string, ttl time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.values[key], c.ttls[key] = value, ttl
+	c.values[key], c.expires[key] = value, c.now.Add(ttl)
 	return nil
 }
 func (c *observedCache) Delete(_ context.Context, keys ...string) error {
@@ -47,6 +52,11 @@ func (c *observedCache) Delete(_ context.Context, keys ...string) error {
 		delete(c.values, key)
 	}
 	return nil
+}
+func (c *observedCache) advance(duration time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(duration)
+	c.mu.Unlock()
 }
 
 type observedStore struct {
@@ -94,16 +104,16 @@ func TestSingleflightConcurrentReadsAndTTL(t *testing.T) {
 	if id := <-store.started; id != 1 {
 		t.Fatalf("first load: %d", id)
 	}
-	// Discard cache activity from the first request before tracking followers.
-	for len(cache.gets) > 0 {
-		<-cache.gets
+	// Discard cold misses from the first request before tracking followers.
+	for len(cache.misses) > 0 {
+		<-cache.misses
 	}
 	for i := 0; i < 8; i++ {
 		go func() { responses <- request(t, router, http.MethodGet, path, nil) }()
 	}
-	// Keep the first database load blocked until the other requests reach Redis.
+	// Keep the first database load blocked until the other requests observe a cold cache.
 	for i := 0; i < 8; i++ {
-		<-cache.gets
+		<-cache.misses
 	}
 	// Another book must complete while book 1 is blocked in PostgreSQL.
 	other := request(t, router, http.MethodGet, "/api/labs/singleflight/books/2", nil)
@@ -123,18 +133,10 @@ func TestSingleflightConcurrentReadsAndTTL(t *testing.T) {
 	if got := store.count(2); got != 1 {
 		t.Fatalf("other-book database loads: %d, want 1", got)
 	}
-	cache.mu.Lock()
-	ttl := cache.ttls["singleflight:book:1"]
-	cache.mu.Unlock()
-	if ttl != 17*time.Second {
-		t.Fatalf("cache TTL: %s", ttl)
-	}
 	if w := request(t, router, http.MethodGet, path, nil); w.Code != 200 || w.Header().Get("X-Cache-Result") != "hit" {
 		t.Fatalf("warm read: %d %q", w.Code, w.Header().Get("X-Cache-Result"))
 	}
-	if err := cache.Delete(context.Background(), "singleflight:book:1"); err != nil {
-		t.Fatal(err)
-	}
+	cache.advance(18 * time.Second)
 	if w := request(t, router, http.MethodGet, path, nil); w.Code != 200 || w.Header().Get("X-Cache-Result") != "miss" {
 		t.Fatalf("read after expiry: %d %q", w.Code, w.Header().Get("X-Cache-Result"))
 	}

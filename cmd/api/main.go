@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/sauravmajumdar/go-cache-lab/internal/bookstore"
 )
 
@@ -35,15 +34,15 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
-	redisClient := redis.NewClient(&redis.Options{Addr: redisAddr})
-	defer redisClient.Close()
+	cache := bookstore.NewRedisCache(redisAddr)
+	defer cache.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := store.Ping(ctx); err != nil {
 		slog.Error("postgres unavailable", "error", err)
 		os.Exit(1)
 	}
-	if err := redisClient.Ping(ctx).Err(); err != nil {
+	if err := cache.Ping(ctx); err != nil {
 		slog.Error("redis unavailable", "error", err)
 		os.Exit(1)
 	}
@@ -52,7 +51,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := &http.Server{Addr: httpAddr, Handler: bookstore.NewRouter(store, redisPinger{redisClient}), ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Addr: httpAddr, Handler: bookstore.NewRouter(store, cache), ReadHeaderTimeout: 5 * time.Second}
 	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
@@ -67,7 +66,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-type redisPinger struct{ client *redis.Client }
-
-func (p redisPinger) Ping(ctx context.Context) error { return p.client.Ping(ctx).Err() }

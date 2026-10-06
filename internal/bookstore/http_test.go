@@ -54,7 +54,10 @@ func (s *memoryStore) Ping(context.Context) error { return s.pingErr }
 
 type pingService struct{ err error }
 
-func (p pingService) Ping(context.Context) error { return p.err }
+func (p pingService) Ping(context.Context) error                               { return p.err }
+func (p pingService) Get(context.Context, string) (string, error)              { return "", p.err }
+func (p pingService) Set(context.Context, string, string, time.Duration) error { return p.err }
+func (p pingService) Delete(context.Context, ...string) error                  { return p.err }
 
 func newRouter(store *memoryStore, redisErr error) http.Handler {
 	return bookstore.NewRouter(store, pingService{redisErr})

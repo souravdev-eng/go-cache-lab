@@ -34,11 +34,17 @@ type BookStore interface {
 	Ping(context.Context) error
 }
 
-type Pinger interface{ Ping(context.Context) error }
+// Cache is the Redis access available to each lab handler as exercises are filled in.
+type Cache interface {
+	Ping(context.Context) error
+	Get(context.Context, string) (string, error)
+	Set(context.Context, string, string, time.Duration) error
+	Delete(context.Context, ...string) error
+}
 
 // NewRouter exposes the working database path and independent starter routes.
 // Each lab route deliberately bypasses Redis until its exercise is completed.
-func NewRouter(store BookStore, redis Pinger) http.Handler {
+func NewRouter(store BookStore, cache Cache) http.Handler {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
@@ -46,7 +52,7 @@ func NewRouter(store BookStore, redis Pinger) http.Handler {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
 		postgresErr := store.Ping(ctx)
-		redisErr := redis.Ping(ctx)
+		redisErr := cache.Ping(ctx)
 		status := http.StatusOK
 		dependencies := gin.H{"postgres": "ok", "redis": "ok"}
 		if postgresErr != nil {
@@ -76,11 +82,11 @@ func NewRouter(store BookStore, redis Pinger) http.Handler {
 	}
 
 	r.GET("/api/books/:id", readBook)
-	// TODO(singleflight): replace this handler with cache aside and per-book coalescing.
+	// TODO(singleflight): use cache Get/Set with per-book coalescing.
 	r.GET("/api/labs/singleflight/books/:id", readBook)
-	// TODO(warming): read the warming namespace; keep PostgreSQL as the cold path.
+	// TODO(warming): use cache Get/Set in the warming namespace; keep PostgreSQL as the cold path.
 	r.GET("/api/labs/warming/books/:id", readBook)
-	// TODO(consistency): cache aside here, then invalidate after a successful update.
+	// TODO(consistency): use cache Get/Set here, then Delete after a successful update.
 	r.GET("/api/labs/consistency/books/:id", readBook)
 	// TODO(replicated): select among logical copies of the popular book.
 	r.GET("/api/labs/hot-keys/replicated/books/:id", readBook)

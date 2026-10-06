@@ -69,4 +69,4 @@ The starter read handlers in `internal/bookstore/http.go` deliberately use Postg
 
 For concurrent traffic after implementing coalescing, try `seq 1 20 | xargs -P20 -I{} curl -s -o /dev/null localhost:8080/api/labs/singleflight/books/1`. Inspect future Redis keys with `docker compose exec redis redis-cli --scan --pattern '*book*'`; clear a particular exercise key with `docker compose exec redis redis-cli DEL singleflight:book:1`. To try a Redis outage after implementing fallback, run `docker compose stop redis`, read a primed book through the local-fallback route, then run `docker compose start redis`.
 
-Run the starter tests with `go test ./...`. The unfinished exercise acceptance scenarios above are future checks; ordinary tests verify the working starter HTTP behavior.
+Run the starter tests with `go test ./...`. To also check seeding and updates through the HTTP API against disposable PostgreSQL and Redis containers, run `CACHE_LAB_INTEGRATION=1 go test ./...` with Docker running. The unfinished exercise acceptance scenarios above are future checks; ordinary tests verify the working starter HTTP behavior.

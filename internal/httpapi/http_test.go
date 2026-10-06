@@ -61,7 +61,7 @@ func (p pingService) Set(context.Context, string, string, time.Duration) error {
 func (p pingService) Delete(context.Context, ...string) error                  { return p.err }
 
 func newRouter(store *memoryStore, redisErr error) http.Handler {
-	return httpapi.NewRouter(store, pingService{redisErr})
+	return httpapi.NewRouter(store, pingService{redisErr}, 30*time.Second)
 }
 
 type memoryCache struct{ values map[string]string }
@@ -145,11 +145,11 @@ func TestBaselineBookRead(t *testing.T) {
 func TestSingleflightBookCacheRoundTrip(t *testing.T) {
 	store := &memoryStore{books: map[int64]bookstore.Book{1: sampleBook}}
 	cache := &memoryCache{values: make(map[string]string)}
-	router := httpapi.NewRouter(store, cache)
+	router := httpapi.NewRouter(store, cache, 30*time.Second)
 	path := "/api/labs/singleflight/books/1"
 
 	w := request(t, router, http.MethodGet, path, nil)
-	if w.Code != 200 || w.Header().Get("X-Cache-Result") != "bypass" || bookFromResponse(t, w) != sampleBook {
+	if w.Code != 200 || w.Header().Get("X-Cache-Result") != "miss" || bookFromResponse(t, w) != sampleBook {
 		t.Fatalf("miss: %d %q %s", w.Code, w.Header().Get("X-Cache-Result"), w.Body.String())
 	}
 	var cached bookstore.Book
@@ -167,7 +167,7 @@ func TestSingleflightBookCacheRoundTrip(t *testing.T) {
 func TestStarterLabRoutesBypassCache(t *testing.T) {
 	router := newRouter(&memoryStore{books: map[int64]bookstore.Book{1: sampleBook}}, nil)
 	paths := []string{
-		"/api/labs/singleflight/books/1", "/api/labs/warming/books/1",
+		"/api/labs/warming/books/1",
 		"/api/labs/consistency/books/1", "/api/labs/hot-keys/replicated/books/1",
 		"/api/labs/hot-keys/local-fallback/books/1", "/api/labs/hot-keys/rate-limited/books/1",
 	}

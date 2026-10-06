@@ -29,6 +29,15 @@ func main() {
 	if httpAddr == "" {
 		httpAddr = ":8080"
 	}
+	cacheTTL := 30 * time.Second
+	if value := os.Getenv("CACHE_TTL"); value != "" {
+		var err error
+		cacheTTL, err = time.ParseDuration(value)
+		if err != nil || cacheTTL <= 0 {
+			slog.Error("CACHE_TTL must be a positive duration", "value", value)
+			os.Exit(1)
+		}
+	}
 
 	store, err := bookstore.OpenPostgres(databaseURL)
 	if err != nil {
@@ -56,7 +65,7 @@ func main() {
 	// The router receives the real database and Redis implementations here.
 	server := &http.Server{
 		Addr:              httpAddr,
-		Handler:           httpapi.NewRouter(store, redisCache),
+		Handler:           httpapi.NewRouter(store, redisCache, cacheTTL),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

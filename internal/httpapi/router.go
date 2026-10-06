@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,13 +28,19 @@ type Cache interface {
 
 // api gives each route handler access to the same database and Redis clients.
 type api struct {
-	store BookStore
-	cache Cache
+	store    BookStore
+	cache    Cache
+	cacheTTL time.Duration
+	flightMu sync.Mutex
+	flights  map[string]*bookFlight
 }
 
 // NewRouter keeps URLs here; each cache pattern's handlers live together in one file.
-func NewRouter(store BookStore, cache Cache) http.Handler {
-	a := &api{store: store, cache: cache}
+func NewRouter(store BookStore, cache Cache, cacheTTL time.Duration) http.Handler {
+	if cacheTTL <= 0 {
+		panic("cache TTL must be positive")
+	}
+	a := &api{store: store, cache: cache, cacheTTL: cacheTTL, flights: make(map[string]*bookFlight)}
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	// Process checks and the database-only comparison route.

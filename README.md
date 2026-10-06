@@ -2,6 +2,8 @@
 
 A local Go/Gin bookstore API backed by PostgreSQL, with Redis ready for six cache exercises. The starter API works before any exercise is completed. All lab reads currently load from PostgreSQL and return `X-Cache-Result: bypass`.
 
+New to Go? Start with the [code tour](docs/code-tour.md). It follows one request through the router, handler, and database before explaining the remaining files.
+
 ## Start and reset
 
 Run everything in containers:

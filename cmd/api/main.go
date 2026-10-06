@@ -53,6 +53,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The router receives the real database and Redis implementations here.
 	server := &http.Server{
 		Addr:              httpAddr,
 		Handler:           httpapi.NewRouter(store, redisCache),

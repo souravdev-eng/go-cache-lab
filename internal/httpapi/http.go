@@ -9,6 +9,8 @@ import (
 	"github.com/sauravmajumdar/go-cache-lab/internal/bookstore"
 )
 
+// BookStore lists the database methods needed by handlers. PostgresStore has
+// these methods, so it satisfies the interface without an explicit declaration.
 type BookStore interface {
 	Get(context.Context, int64) (bookstore.Book, error)
 	Update(context.Context, int64, bookstore.BookUpdate) (bookstore.Book, error)
@@ -23,6 +25,7 @@ type Cache interface {
 	Delete(context.Context, ...string) error
 }
 
+// api gives each route handler access to the same database and Redis clients.
 type api struct {
 	store BookStore
 	cache Cache
